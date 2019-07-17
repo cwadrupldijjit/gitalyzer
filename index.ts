@@ -82,6 +82,7 @@ function readGitStatusForFolder(folderPath: string) {
         let unstagedLine = false;
         let untrackedLine = false;
         let trackEmptyLines = false;
+        let commitsOnNextLine = false;
         let nextEmptyLineResets = false;
 
         gitProcess.stdout.on('data', output => {
@@ -103,8 +104,40 @@ function readGitStatusForFolder(folderPath: string) {
                         return;
                     }
         
-                    if (text.match(/^On branch/)) {
+                    if (text.startsWith('On branch')) {
                         parsedResult.localBranchName = text.match(/^On branch (.*)$/)[1];
+                        return;
+                    }
+
+                    if (text.startsWith('Your branch')) {
+                        let isLocal = false;
+
+                        if (text.includes('ahead')) {
+                            isLocal = true;
+                        }
+                        else if (text.includes('diverged')) {
+                            commitsOnNextLine = true;
+                        }
+
+                        if (text.match(/ahead|behind/)) {
+                            const numberOfCommits = +text.match(/by (\d+)/)[1];
+
+                            if (isLocal) {
+                                parsedResult.localNewCommits = numberOfCommits;
+                            }
+                            else {
+                                parsedResult.remoteNewCommits = numberOfCommits;
+                            }
+                        }
+
+                        parsedResult.remoteBranchName = text.match(/'([^']*)'/)[1];
+                        return;
+                    }
+
+                    if (commitsOnNextLine) {
+                        parsedResult.localNewCommits = +text.match(/have (\d+)/)[1];
+                        parsedResult.remoteNewCommits = +text.match(/and (\d+)/)[1];
+                        commitsOnNextLine = false;
                         return;
                     }
         
@@ -126,35 +159,37 @@ function readGitStatusForFolder(folderPath: string) {
                         return;
                     }
         
-                    if (stagedLine) {
-                        if (text.includes('new file:')) {
-                            parsedResult.stagedChanges.added++;
+                    if (nextEmptyLineResets) {
+                        if (stagedLine) {
+                            if (text.includes('new file:')) {
+                                parsedResult.stagedChanges.added++;
+                                return;
+                            }
+                            if (text.includes('modified:')) {
+                                parsedResult.stagedChanges.modified++;
+                                return;
+                            }
+                            if (text.includes('deleted:')) {
+                                parsedResult.stagedChanges.deleted++;
+                                return;
+                            }
+                        }
+            
+                        if (unstagedLine) {
+                            if (text.includes('modified:')) {
+                                parsedResult.unstagedChanges.modified++;
+                                return;
+                            }
+                            if (text.includes('deleted:')) {
+                                parsedResult.unstagedChanges.deleted++;
+                                return;
+                            }
+                        }
+            
+                        if (untrackedLine) {
+                            parsedResult.unstagedChanges.added++;
                             return;
                         }
-                        if (text.includes('modified:')) {
-                            parsedResult.stagedChanges.modified++;
-                            return;
-                        }
-                        if (text.includes('deleted:')) {
-                            parsedResult.stagedChanges.deleted++;
-                            return;
-                        }
-                    }
-        
-                    if (unstagedLine) {
-                        if (text.includes('modified:')) {
-                            parsedResult.unstagedChanges.modified++;
-                            return;
-                        }
-                        if (text.includes('deleted:')) {
-                            parsedResult.unstagedChanges.deleted++;
-                            return;
-                        }
-                    }
-        
-                    if (untrackedLine && nextEmptyLineResets) {
-                        parsedResult.unstagedChanges.added++;
-                        return;
                     }
                 });
         });
